@@ -16,76 +16,28 @@ A comprehensive **IoT solution** for smart agriculture management. This project 
 * 🔄 **OTA Updates:** Remote firmware flashing over WiFi (no USB needed).
 * 📶 **Smart Connectivity:** Auto-reconnecting WiFi manager.
 * 🖥️ **OLED Display:** Real-time status updates on a local SSD1306 screen.
-
-## 📂 Project Structure
-```text
-.
-├── 🟢 main.py            # Main application logic
-├── ⚙️ boot.py            # Startup & system initialization
-├── 🔐 config.py          # Private credentials (WiFi/MQTT)
-├── 📂 app/
-│   ├── 🌡️ sensors.py     # Sensor drivers and logic
-│   ├── ⚙️ actuators.py   # Relay and motor controls
-│   ├── 🌐 web_server.py  # Dashboard & API routes
-│   ├── 📶 wifi_manager.py # Network management 
-│   └── 🆙 ota.py          # Over-The-Air update engine
-└── 📂 lib/               # External libraries (umqtt, ssd1306)
-
-
-📂 Full Setup & Workflow Guide1️⃣ First: Install the Repo on your Device 📥To get the project files from GitHub to your laptop:
-
-   OS               Command
-🐧 Linuxgit clone   git@github.com:manhero4995-dotcom/smart_farm.gitcd smart_farm
-🪟 Windowsgit clone https://github.com/manhero4995-dotcom/smart_farm.gitcd smart_farm
-
-
-2️⃣ Second: Install Tools & Environment 🛠️
-Setup the Python Virtual Environment and install the necessary drivers to talk to the ESP32.
-
-Step A: Create Environment
-
-🐧 Linux: python3 -m venv esptool-evn && source esptool-evn/bin/activate
-
-🪟 Windows: python -m venv esptool-evn && .\esptool-evn\Scripts\activate
-
-Step B: Install Dependencies
-
-Bash
-pip install esptool adafruit-ampy pyserial
-Step C: Flash Firmware (Optional/First Time Only)
-
-🐧 Linux: esptool.py --port /dev/ttyUSB0 erase_flash
-
-🪟 Windows: esptool --port COM3 erase_flash
-
-3️⃣ Third: Upload to ESP32 & Run Project 🚀
-How to move your code from the laptop to the hardware and start the "Smart Farm".
-
-Step A: Upload Files
-We use ampy to send the folders and files. Replace <PORT> with your port (e.g., /dev/ttyUSB0 or COM3).
-
-Bash
-# Uploading the core folders
+📂 Project StructurePlaintext.
+├── 🟢 main.py             # Main application logic & loop
+├── ⚙️ boot.py             # Startup & system initialization
+├── 🔐 config.py           # Private credentials (WiFi/MQTT)
+├── 📂 app/                # Core Application Logic
+│   ├── 🌡️ sensors.py      # Sensor drivers (DHT11, Moisture)
+│   ├── ⚙️ actuators.py    # Relay, Servo, and motor controls
+│   ├── 🌐 web_server.py   # Local dashboard & API routes
+│   ├── 📶 wifi_manager.py  # Smart network connection management 
+│   └── 🆙 ota.py           # Over-The-Air firmware update engine
+└── 📂 lib/                # External Libraries
+    ├── 🖥️ ssd1306.py      # OLED Display driver
+    └── 📡 umqtt/          # MQTT communication protocols
+📂 Full Setup & Workflow Guide1️⃣ First: Clone the Repository 📥Download the project files to your local machine.OSCommand🐧 Linuxgit clone git@github.com:manhero4995-dotcom/smart_farm.gitcd smart_farm🪟 Windowsgit clone https://github.com/manhero4995-dotcom/smart_farm.gitcd smart_farm2️⃣ Second: Environment & Tools 🛠️Prepare the Python Virtual Environment and install the flashing tools.🔹 Step A: Create Virtual EnvironmentLinux: python3 -m venv esptool-evn && source esptool-evn/bin/activateWindows: python -m venv esptool-evn && .\esptool-evn\Scripts\activate🔹 Step B: Install DependenciesBashpip install esptool adafruit-ampy pyserial
+🔹 Step C: Flash MicroPython Firmware (New Devices Only)Linux: esptool.py --port /dev/ttyUSB0 erase_flashWindows: esptool --port COM3 erase_flash3️⃣ Third: Upload & Execution 🚀Deploy the code to your ESP32 hardware.📤 Step A: Upload Files to ESP32Use ampy to push the project structure. (Replace <PORT> with your specific port).Bash# Upload application folders
 ampy --port <PORT> put app
 ampy --port <PORT> put lib
 
-# Uploading the main files
+# Upload configuration and main scripts
 ampy --port <PORT> put main.py
 ampy --port <PORT> put boot.py
-Step B: How the Project Works
-
-Boot Up: When the ESP32 starts, it runs boot.py to connect to WiFi (via wifi_manager.py).
-
-Sensors: The main.py calls sensors.py to read temperature and moisture.
-
-Control: You can open your browser and enter the ESP32's IP address to see the Web Server and control the pumps.
-
-MQTT: The device will start publishing data to the MQTT broker for remote monitoring.
-
-📝 To Save these changes to your GitHub:
-Copy the code above, paste it at the end of your README.md, then run:
-
-Bash
-git add README.md
-git commit -m "Add 1st, 2nd, and 3rd steps for Linux and Windows"
+ampy --port <PORT> put config.py
+⚙️ Step B: Project Operation WorkflowNetwork: boot.py initializes and triggers wifi_manager.py to get the ESP32 online.Telemetry: main.py reads data from sensors.py (Temp/Humidity).Dashboard: Access the local IP address in your browser to control pumps via web_server.py.Remote: Data is published via umqtt for real-time tracking on your MQTT broker.📝 Saving Changes to GitHubTo push this professional update to your repository, run:Bashgit add README.md
+git commit -m "🚀 Finalize Professional README with full setup guide"
 git push origin main

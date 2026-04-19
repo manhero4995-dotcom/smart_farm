@@ -1,24 +1,32 @@
-# 🌿 Smart Farm IoT System
+# 🌿 Smart Farm IoT System 🚜💧
 
-مشروع متكامل لإدارة المزارع الذكية باستخدام متحكمات ESP32/ESP8266، يعتمد على تقنيات **IoT** لمراقبة البيئة والتحكم في المحركات عن بُعد.
+![IoT](https://img.shields.io/badge/Focus-Internet_of_Things-blue)
+![Platform](https://img.shields.io/badge/Hardware-ESP32%20%7C%20ESP8266-orange)
+![Language](https://img.shields.io/badge/Language-MicroPython-yellow)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-## 🚀 المميزات (Features)
-* **Real-time Monitoring:** مراقبة درجة الحرارة والرطوبة باستخدام حساسات (مثل DHT11).
-* **Web Server Control:** واجهة مستخدم ويب للتحكم في المحركات والمضخات يدوياً.
-* **MQTT Integration:** دعم بروتوكول MQTT لتبادل البيانات بسرعة وكفاءة عالية.
-* **OTA Updates:** نظام تحديث الكود عن بُعد (Over-The-Air) دون الحاجة لتوصيل كابل.
-* **WiFi Manager:** سهولة الاتصال بشبكات WiFi مختلفة دون تعديل الكود يدوياً.
+A comprehensive **IoT solution** for smart agriculture management. This project enables automated environmental monitoring, remote actuation, and seamless firmware management.
 
-## 📂 هيكل المشروع (Project Structure)
+---
+
+## 🚀 Key Features
+* 🌡️ **Real-time Monitoring:** Accurate tracking of temperature and humidity (DHT11).
+* 🌐 **Web Dashboard:** Interactive local web server to toggle pumps and fans.
+* 📡 **MQTT Protocol:** Lightweight messaging for high-speed data telemetry.
+* 🔄 **OTA Updates:** Remote firmware flashing over WiFi (no USB needed).
+* 📶 **Smart Connectivity:** Auto-reconnecting WiFi manager.
+* 🖥️ **OLED Display:** Real-time status updates on a local SSD1306 screen.
+
+## 📂 Project Structure
 ```text
 .
-├── main.py              # نقطة الانطلاق الأساسية للكود
-├── boot.py              # إعدادات بدء التشغيل للمتحكم
-├── config.py            # إعدادات الشبكة والـ MQTT (Credentials)
-├── app/
-│   ├── sensors.py       # معالجة بيانات الحساسات
-│   ├── actuators.py     # التحكم في المحركات والمضخات
-│   ├── web_server.py    # إدارة واجهة الويب
-│   ├── wifi_manager.py  # إدارة الاتصال بالإنترنت
-│   └── ota.py           # محرك التحديثات الهوائية (OTA)
-└── lib/                 # المكتبات الخارجية (SSD1306, MQTT)
+├── 🟢 main.py            # Main application logic
+├── ⚙️ boot.py            # Startup & system initialization
+├── 🔐 config.py          # Private credentials (WiFi/MQTT)
+├── 📂 app/
+│   ├── 🌡️ sensors.py     # Sensor drivers and logic
+│   ├── ⚙️ actuators.py   # Relay and motor controls
+│   ├── 🌐 web_server.py  # Dashboard & API routes
+│   ├── 📶 wifi_manager.py # Network management
+│   └── 🆙 ota.py          # Over-The-Air update engine
+└── 📂 lib/               # External libraries (umqtt, ssd1306)

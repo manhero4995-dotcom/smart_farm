@@ -1,7 +1,8 @@
 
 
-import from Pin, ADC
+from machine import Pin, ADC
 import time, dht 
+import sys
 from config import *
 
 
@@ -59,17 +60,16 @@ def read_soil():
 
 # ------ Ultrasonic HC-SR04 --------
 
+
+trig = Pin(PIN_ULTRASONIC_TR, Pin.OUT)
+echo = Pin(PIN_ULTRASONIC_EC, Pin.IN )
+     
 def read_ultrasonic(timeout_us=30000):
     
     
      """
      Returns distance in cm, or None on timeout.
      """
-     
-     trig = Pin(PIN_ULTRASONIC_TR, Pin.OUT)
-     echo = pin(PIN_ULTRASONIC_EC, Pin.IN )
-     
-     
      trig.value(0)
      
      time.sleep_us(2)

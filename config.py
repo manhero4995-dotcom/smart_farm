@@ -1,5 +1,8 @@
 
 
+
+
+
 #  ------ WIFI ------
 
 WIFI_SSID          = "WE_671AF0"
@@ -57,6 +60,12 @@ TANK_MAX_CM        = 30
 TANK_EMPTY_CM      = 5.0
 
 
+#  ------ Relay Logic ------
+
+RELAY_ON             = 0
+RELAY_OFF            = 1
+
+
 #  ------ MQTT ------
 
 #  Revision the ip and another
@@ -67,11 +76,11 @@ MQTT_PORT         = 1883
 MQTT_USER         = "MOHA"
 MQTT_PASS         = "moha"
 MQTT_TOPIC        = "farm/sensors"
+MQTT_CLIENT       = "farm/sensors"
+MQTT_PUB_STATUS   = "farm/status"
+MQTT_SUB_CMD      = "farm/cmd"
 
 
 #  ------ Web Dashboard ------
 
 WEB_PORT          = 80
-
-
-

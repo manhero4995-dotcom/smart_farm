@@ -1,440 +1,675 @@
-
-
-
 # ============================================================
-#  web_server.py  —  Async HTTP server + Web Dashboard
-#  Routes:
-#    GET  /           → Dashboard HTML
-#    GET  /api/data   → JSON sensor data
-#    POST /api/relay  → Control relay {num, state}
-#    POST /api/sleep  → Enter deep sleep now
-#    GET  /ota        → OTA upload page
-#    POST /ota        → Upload file (OTA)
-#    GET  /api/files  → List filesystem
-#    POST /api/delete → Delete file
+# web_server.py — HTTP Server + Web Dashboard
+#
+# الـ ESP32 بيشتغل كـ Web Server صغير
+# بيستقبل requests من المتصفح ويرد عليها
+#
+# Routes:
+#   GET  /           → الـ Dashboard HTML
+#   GET  /api/data   → بيانات السنسورات JSON
+#   POST /api/relay  → تحكم في الريلاي
+#   POST /api/sleep  → Deep Sleep
+#   POST /ota        → رفع ملف جديد
+#   GET  /api/files  → قائمة الملفات
 # ============================================================
-import json, gc
-import usocket as socket
-from sensors   import read_all
+
+import json
+import gc
+import sys
+sys.path.append('/app')
+sys.path.append('/lib')
+
+from sensors   import *
 from actuators import relay_set, relay_get, all_relays_off, oled_show
-from ota       import handle_ota_request, list_files, delete_file, free_space
-from config    import WEB_PORT, SLEEP_SECONDS
- 
-# ── Shared state ─────────────────────────────────────────────
-_last_data   = {}
-_auto_mode   = True     # True = automatic irrigation logic
-_sleep_flag  = False    # Set True to trigger sleep after response
- 
-# ── HTML Dashboard ────────────────────────────────────────────
-DASHBOARD_HTML = """<!DOCTYPE html>
+from ota       import handle_ota_request, list_files
+from config    import SLEEP_SECONDS
+
+
+# ══════════════════════════════════════════════════════════════
+# Dashboard HTML
+# الصفحة دي بتتبعت للمتصفح لما حد يفتح IP الـ ESP32
+# فيها:
+#   - كروت السنسورات (حرارة، رطوبة، تربة، خزان)
+#   - أزرار الريلاي
+#   - زرار Deep Sleep
+#   - رفع ملفات OTA
+#   - Log للأحداث
+# ══════════════════════════════════════════════════════════════
+HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Smart Farm IoT</title>
+<title>Smart Farm</title>
 <style>
+  /* ── Reset ── */
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
-  header{background:#1e293b;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155}
-  header h1{font-size:1.3rem;color:#38bdf8;display:flex;align-items:center;gap:8px}
-  .dot{width:10px;height:10px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-  main{padding:20px;max-width:900px;margin:0 auto}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:24px}
-  .card{background:#1e293b;border-radius:12px;padding:18px;border:1px solid #334155}
-  .card-label{font-size:.72rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-  .card-value{font-size:2rem;font-weight:700;color:#f1f5f9}
-  .card-unit{font-size:.9rem;color:#64748b;margin-left:4px}
-  .card-bar{height:6px;background:#0f172a;border-radius:3px;margin-top:10px;overflow:hidden}
-  .card-bar-fill{height:100%;border-radius:3px;transition:width .6s}
-  .bar-blue{background:#38bdf8}
-  .bar-green{background:#22c55e}
-  .bar-amber{background:#f59e0b}
-  .bar-red{background:#ef4444}
-  section{background:#1e293b;border-radius:12px;padding:20px;border:1px solid #334155;margin-bottom:18px}
-  section h2{font-size:.9rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:16px}
-  .relay-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
-  .relay-btn{padding:10px 0;border:none;border-radius:8px;cursor:pointer;font-size:.88rem;font-weight:600;transition:all .2s}
-  .relay-on{background:#22c55e;color:#052e16}
-  .relay-off{background:#334155;color:#94a3b8}
-  .relay-on:hover{background:#16a34a}
-  .relay-off:hover{background:#475569}
-  .btn{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:.88rem;transition:all .15s}
-  .btn-blue{background:#0ea5e9;color:#fff}
+  body{
+    font-family:system-ui,sans-serif;
+    background:#0f172a;
+    color:#e2e8f0;
+    min-height:100vh;
+  }
+
+  /* ── Header ── */
+  header{
+    background:#1e293b;
+    padding:14px 22px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    border-bottom:1px solid #334155;
+  }
+  header h1{
+    font-size:1.1rem;
+    color:#38bdf8;
+    font-weight:600;
+  }
+  /* النقطة الخضرا اللي بتومض = الجهاز online */
+  .dot{
+    width:8px;height:8px;
+    border-radius:50%;
+    background:#22c55e;
+    animation:pulse 2s infinite;
+    display:inline-block;
+    margin-right:5px;
+  }
+  @keyframes pulse{
+    0%,100%{opacity:1}
+    50%{opacity:.2}
+  }
+
+  /* ── Main container ── */
+  main{
+    padding:16px;
+    max-width:820px;
+    margin:0 auto;
+  }
+
+  /* ── Status bar ── */
+  #stat{
+    font-size:.72rem;
+    color:#475569;
+    margin-bottom:14px;
+    display:flex;
+    gap:14px;
+    flex-wrap:wrap;
+  }
+  #stat b{color:#94a3b8}
+
+  /* ── Sensor cards ── */
+  .cards{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(155px,1fr));
+    gap:11px;
+    margin-bottom:14px;
+  }
+  .card{
+    background:#1e293b;
+    border-radius:12px;
+    padding:14px 15px;
+    border:1px solid #334155;
+  }
+  .card-lbl{
+    font-size:.67rem;
+    color:#64748b;
+    text-transform:uppercase;
+    letter-spacing:.07em;
+    margin-bottom:4px;
+  }
+  .card-val{
+    font-size:1.8rem;
+    font-weight:700;
+    color:#f1f5f9;
+    line-height:1.1;
+  }
+  .card-unit{
+    font-size:.78rem;
+    color:#475569;
+    margin-left:2px;
+  }
+  /* شريط التقدم تحت كل كارت */
+  .bar{
+    height:4px;
+    background:#0f172a;
+    border-radius:2px;
+    margin-top:9px;
+    overflow:hidden;
+  }
+  .bar-fill{
+    height:100%;
+    border-radius:2px;
+    transition:width .7s ease;
+  }
+  .c-amber{background:#f59e0b}  /* حرارة */
+  .c-blue {background:#38bdf8}  /* رطوبة / خزان */
+  .c-green{background:#22c55e}  /* تربة كويسة */
+  .c-red  {background:#ef4444}  /* تربة جافة */
+
+  /* ── Sections ── */
+  .sec{
+    background:#1e293b;
+    border-radius:12px;
+    padding:15px 17px;
+    border:1px solid #334155;
+    margin-bottom:13px;
+  }
+  .sec-title{
+    font-size:.7rem;
+    color:#64748b;
+    text-transform:uppercase;
+    letter-spacing:.07em;
+    margin-bottom:12px;
+    font-weight:500;
+  }
+
+  /* ── Relay buttons ── */
+  .relay-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(118px,1fr));
+    gap:7px;
+    margin-bottom:11px;
+  }
+  .rbtn{
+    padding:9px 4px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:.8rem;
+    font-weight:600;
+    transition:all .18s;
+    width:100%;
+  }
+  /* الريلاي شغّال = أخضر */
+  .ron {background:#22c55e;color:#052e16}
+  .ron:hover{background:#16a34a}
+  /* الريلاي واقف = رمادي غامق */
+  .roff{background:#1e3a4a;color:#64748b;border:1px solid #334155}
+  .roff:hover{background:#334155}
+
+  /* ── Generic buttons ── */
+  .btn{
+    padding:8px 15px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:600;
+    font-size:.8rem;
+    transition:background .15s;
+  }
+  .btn-blue {background:#0ea5e9;color:#fff}
   .btn-blue:hover{background:#0284c7}
-  .btn-red{background:#ef4444;color:#fff}
+  .btn-red  {background:#ef4444;color:#fff}
   .btn-red:hover{background:#dc2626}
-  .btn-amber{background:#f59e0b;color:#1c1000}
+  .btn-amber{background:#f59e0b;color:#111}
   .btn-amber:hover{background:#d97706}
-  .toggle{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-  .toggle input[type=checkbox]{width:36px;height:20px;accent-color:#38bdf8;cursor:pointer}
-  .log{background:#0f172a;border-radius:8px;padding:12px;font-family:monospace;font-size:.78rem;color:#94a3b8;height:100px;overflow-y:auto;border:1px solid #334155}
-  .tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.72rem;font-weight:600;margin-left:6px}
-  .tag-ok{background:#052e16;color:#22c55e}
-  .tag-warn{background:#431407;color:#f97316}
-  .tag-err{background:#450a0a;color:#ef4444}
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+
+  /* ── Row layout ── */
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
   .spacer{flex:1}
-  input[type=number],input[type=password]{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:8px;width:80px;font-size:.88rem}
-  a{color:#38bdf8;text-decoration:none}
+
+  /* ── Inputs ── */
+  input[type=number],
+  input[type=password]{
+    background:#0f172a;
+    border:1px solid #334155;
+    color:#e2e8f0;
+    padding:7px 10px;
+    border-radius:8px;
+    font-size:.8rem;
+    outline:none;
+  }
+  input:focus{border-color:#38bdf8}
+
+  /* ── Event log ── */
+  .log{
+    background:#0f172a;
+    border-radius:8px;
+    padding:9px 11px;
+    font-family:monospace;
+    font-size:.71rem;
+    color:#475569;
+    height:86px;
+    overflow-y:auto;
+    border:1px solid #1e293b;
+  }
 </style>
 </head>
 <body>
+
+<!-- ══ Header ══════════════════════════════════════════════ -->
 <header>
-  <h1><span>🌿</span> Smart Farm IoT</h1>
-  <div style="display:flex;align-items:center;gap:10px">
-    <div class="dot" id="status-dot"></div>
-    <span id="status-txt" style="font-size:.8rem;color:#94a3b8">Connecting…</span>
-  </div>
+  <h1>Smart Farm IoT</h1>
+  <span>
+    <span class="dot" id="dot"></span>
+    <span id="stxt" style="font-size:.78rem;color:#64748b">connecting...</span>
+  </span>
 </header>
+
 <main>
- 
-<!-- Sensor Cards -->
-<div class="grid" id="cards">
-  <div class="card">
-    <div class="card-label">Temperature</div>
-    <div class="card-value" id="val-temp">--<span class="card-unit">°C</span></div>
-    <div class="card-bar"><div class="card-bar-fill bar-amber" id="bar-temp" style="width:0%"></div></div>
+
+  <!-- Status bar: IP / uptime / last update -->
+  <div id="stat">
+    <span>IP: <b id="s-ip">--</b></span>
+    <span>Uptime: <b id="s-up">--</b></span>
+    <span>Updated: <b id="s-time">--</b></span>
   </div>
-  <div class="card">
-    <div class="card-label">Air Humidity</div>
-    <div class="card-value" id="val-hum">--<span class="card-unit">%</span></div>
-    <div class="card-bar"><div class="card-bar-fill bar-blue" id="bar-hum" style="width:0%"></div></div>
+
+  <!-- ══ Sensor cards ══════════════════════════════════════ -->
+  <div class="cards">
+
+    <!-- Temperature -->
+    <div class="card">
+      <div class="card-lbl">Temperature</div>
+      <div class="card-val" id="vt">
+        --<span class="card-unit">C</span>
+      </div>
+      <div class="bar">
+        <div class="bar-fill c-amber" id="bt" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Air Humidity -->
+    <div class="card">
+      <div class="card-lbl">Air Humidity</div>
+      <div class="card-val" id="vh">
+        --<span class="card-unit">%</span>
+      </div>
+      <div class="bar">
+        <div class="bar-fill c-blue" id="bh" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Soil Moisture -->
+    <div class="card">
+      <div class="card-lbl">Soil Moisture</div>
+      <div class="card-val" id="vs">
+        --<span class="card-unit">%</span>
+      </div>
+      <div class="bar">
+        <!-- اللون بيتغير: أحمر = جافة ، أخضر = كويسة ، أزرق = رطبة -->
+        <div class="bar-fill c-green" id="bs" style="width:0%"></div>
+      </div>
+    </div>
+
+    <!-- Tank Level -->
+    <div class="card">
+      <div class="card-lbl">Tank Level</div>
+      <div class="card-val" id="vk">
+        --<span class="card-unit">%</span>
+      </div>
+      <div class="bar">
+        <div class="bar-fill c-blue" id="bk" style="width:0%"></div>
+      </div>
+    </div>
+
   </div>
-  <div class="card">
-    <div class="card-label">Soil Moisture</div>
-    <div class="card-value" id="val-soil">--<span class="card-unit">%</span></div>
-    <div class="card-bar"><div class="card-bar-fill bar-green" id="bar-soil" style="width:0%"></div></div>
+
+  <!-- ══ Relay Control ═════════════════════════════════════ -->
+  <div class="sec">
+    <div class="sec-title">Relay Control</div>
+    <div class="relay-grid">
+      <button class="rbtn roff" id="r1" onclick="tog(1)">Pump — OFF</button>
+      <button class="rbtn roff" id="r2" onclick="tog(2)">Relay 2 — OFF</button>
+      <button class="rbtn roff" id="r3" onclick="tog(3)">Relay 3 — OFF</button>
+      <button class="rbtn roff" id="r4" onclick="tog(4)">Relay 4 — OFF</button>
+    </div>
+    <div class="row">
+      <button class="btn btn-red"  onclick="allOff()">All OFF</button>
+      <div class="spacer"></div>
+      <button class="btn btn-blue" onclick="load()">Refresh</button>
+    </div>
   </div>
-  <div class="card">
-    <div class="card-label">Tank Level</div>
-    <div class="card-value" id="val-tank">--<span class="card-unit">%</span></div>
-    <div class="card-bar"><div class="card-bar-fill bar-blue" id="bar-tank" style="width:0%"></div></div>
+
+  <!-- ══ Deep Sleep ════════════════════════════════════════ -->
+  <div class="sec">
+    <div class="sec-title">Deep Sleep</div>
+    <div class="row">
+      <input type="number" id="ssec"
+             value="300" min="10" max="3600"
+             style="width:78px">
+      <span style="font-size:.8rem;color:#64748b">seconds</span>
+      <button class="btn btn-amber" onclick="goSleep()">
+        Sleep Now
+      </button>
+    </div>
   </div>
-</div>
- 
-<!-- Relay Control -->
-<section>
-  <h2>Relay Control</h2>
-  <div class="relay-grid" id="relay-grid">
-    <button class="relay-btn relay-off" onclick="toggleRelay(1)" id="relay-1">Relay 1 — Pump ⬤ OFF</button>
-    <button class="relay-btn relay-off" onclick="toggleRelay(2)" id="relay-2">Relay 2 ⬤ OFF</button>
-    <button class="relay-btn relay-off" onclick="toggleRelay(3)" id="relay-3">Relay 3 ⬤ OFF</button>
-    <button class="relay-btn relay-off" onclick="toggleRelay(4)" id="relay-4">Relay 4 ⬤ OFF</button>
+
+  <!-- ══ OTA Upload ════════════════════════════════════════ -->
+  <div class="sec">
+    <div class="sec-title">OTA File Upload</div>
+    <div class="row">
+      <input type="password" id="opwd"
+             placeholder="OTA password"
+             style="width:130px">
+      <input type="file" id="ofile" accept=".py">
+      <button class="btn btn-blue" onclick="doOTA()">Upload</button>
+    </div>
+    <div id="ota-msg"
+         style="margin-top:7px;font-size:.75rem;color:#64748b">
+    </div>
   </div>
-  <div style="margin-top:12px" class="row">
-    <label class="toggle">
-      <input type="checkbox" id="auto-mode" checked onchange="setAuto(this.checked)">
-      <span style="font-size:.85rem">Auto irrigation mode</span>
-    </label>
-    <span class="spacer"></span>
-    <button class="btn btn-red" onclick="allOff()">All Relays OFF</button>
+
+  <!-- ══ Event Log ═════════════════════════════════════════ -->
+  <div class="sec">
+    <div class="sec-title">Event Log</div>
+    <div class="log" id="log"></div>
   </div>
-</section>
- 
-<!-- Sleep & System -->
-<section>
-  <h2>Power & Sleep</h2>
-  <div class="row">
-    <span style="font-size:.85rem">Sleep duration:</span>
-    <input type="number" id="sleep-sec" value="300" min="10" max="3600">
-    <span style="font-size:.85rem">seconds</span>
-    <button class="btn btn-amber" onclick="goSleep()">💤 Deep Sleep Now</button>
-    <span class="spacer"></span>
-    <button class="btn btn-blue" onclick="fetchData()">↻ Refresh</button>
-  </div>
-</section>
- 
-<!-- OTA Update -->
-<section>
-  <h2>OTA File Upload</h2>
-  <div class="row">
-    <input type="password" id="ota-pwd" placeholder="OTA password" style="width:140px">
-    <input type="file" id="ota-file" accept=".py">
-    <button class="btn btn-blue" onclick="uploadOTA()">⬆ Upload</button>
-  </div>
-  <div id="ota-status" style="margin-top:8px;font-size:.8rem;color:#94a3b8"></div>
-  <div id="fs-list" style="margin-top:12px;font-size:.78rem;color:#64748b"></div>
-</section>
- 
-<!-- Log -->
-<section>
-  <h2>Event Log</h2>
-  <div class="log" id="log"></div>
-</section>
- 
+
 </main>
+
 <script>
-const relayStates = {1:false,2:false,3:false,4:false};
-const relayNames  = {1:"Pump",2:"Relay 2",3:"Relay 3",4:"Relay 4"};
- 
-function log(msg, type="info"){
-  const d=document.getElementById("log");
-  const t=new Date().toLocaleTimeString();
-  const cls=type==="ok"?"tag-ok":type==="warn"?"tag-warn":"tag-err";
-  d.innerHTML=`<span style="color:#475569">[${t}]</span> ${msg}<br>`+d.innerHTML;
-}
- 
-async function fetchData(){
-  try{
-    const r=await fetch("/api/data");
-    const d=await r.json();
-    document.getElementById("status-dot").style.background="#22c55e";
-    document.getElementById("status-txt").textContent="Live";
- 
-    const set=(id,val,unit="")=>{
-      const el=document.getElementById(id);
-      if(el) el.innerHTML=val!==null?`${val}<span class="card-unit">${unit}</span>`:`--`;
-    };
-    set("val-temp",d.temperature,"°C");
-    set("val-hum",d.humidity,"%");
-    set("val-soil",d.soil_pct,"%");
-    set("val-tank",d.tank_pct,"%");
-    const bar=(id,v,max=100)=>{const el=document.getElementById(id);if(el)el.style.width=(v/max*100)+"%";};
-    bar("bar-temp",d.temperature,50);
-    bar("bar-hum",d.humidity);
-    bar("bar-soil",d.soil_pct);
-    bar("bar-tank",d.tank_pct);
- 
-    [1,2,3,4].forEach(n=>{
-      relayStates[n]=d["relay_"+n]||false;
-      updateRelayBtn(n);
-    });
- 
-    if(d.auto_mode!==undefined)
-      document.getElementById("auto-mode").checked=d.auto_mode;
- 
-    log(`Temp:${d.temperature}°C Hum:${d.humidity}% Soil:${d.soil_pct}% Tank:${d.tank_pct}%`,"ok");
-  } catch(e){
-    document.getElementById("status-dot").style.background="#ef4444";
-    document.getElementById("status-txt").textContent="Offline";
-    log("Fetch failed: "+e,"err");
+  // ── state ────────────────────────────────────────────────
+  // حالة كل ريلاي: false = OFF
+  const rs = {1:false, 2:false, 3:false, 4:false};
+  // اسم كل ريلاي
+  const rn = {1:'Pump', 2:'Relay 2', 3:'Relay 3', 4:'Relay 4'};
+  // وقت بدء التشغيل (للـ uptime)
+  const boot = Date.now();
+
+  // ── log ─────────────────────────────────────────────────
+  // بيضيف سطر جديد في الـ event log
+  function lg(msg, ok=true){
+    const d = document.getElementById('log');
+    const t = new Date().toLocaleTimeString();
+    const c = ok ? '#22c55e' : '#ef4444';
+    d.innerHTML =
+      `<span style="color:#334155">[${t}]</span> ` +
+      `<span style="color:${c}">${msg}</span><br>` +
+      d.innerHTML;
   }
-}
- 
-function updateRelayBtn(n){
-  const btn=document.getElementById("relay-"+n);
-  if(!btn) return;
-  const on=relayStates[n];
-  btn.className="relay-btn "+(on?"relay-on":"relay-off");
-  btn.textContent=`${relayNames[n]} ⬤ ${on?"ON":"OFF"}`;
-}
- 
-async function toggleRelay(n){
-  const newState=!relayStates[n];
-  try{
-    await fetch("/api/relay",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({num:n,state:newState})});
-    relayStates[n]=newState;
-    updateRelayBtn(n);
-    log(`Relay ${n} → ${newState?"ON":"OFF"}`,"ok");
-  } catch(e){ log("Relay error: "+e,"err"); }
-}
- 
-async function allOff(){
-  try{
-    await fetch("/api/relay",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({num:0,state:false})});
-    [1,2,3,4].forEach(n=>{relayStates[n]=false;updateRelayBtn(n);});
-    log("All relays OFF","ok");
-  } catch(e){ log("Error: "+e,"err"); }
-}
- 
-async function setAuto(val){
-  try{
-    await fetch("/api/auto",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({auto:val})});
-    log("Auto mode: "+val,"ok");
-  } catch(e){}
-}
- 
-async function goSleep(){
-  const sec=document.getElementById("sleep-sec").value||300;
-  if(!confirm(`Enter deep sleep for ${sec} seconds?`)) return;
-  try{
-    await fetch("/api/sleep",{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({seconds:parseInt(sec)})});
-    log(`Entering deep sleep for ${sec}s…`,"warn");
-    document.getElementById("status-dot").style.background="#f59e0b";
-    document.getElementById("status-txt").textContent="Sleeping…";
-  } catch(e){}
-}
- 
-async function uploadOTA(){
-  const pwd=document.getElementById("ota-pwd").value;
-  const file=document.getElementById("ota-file").files[0];
-  if(!file){ alert("Select a file first"); return; }
-  const status=document.getElementById("ota-status");
-  status.textContent="Uploading "+file.name+"…";
-  try{
-    const buf=await file.arrayBuffer();
-    const r=await fetch("/ota",{method:"POST",
-      headers:{"X-OTA-Password":pwd,"X-OTA-Filename":file.name,"Content-Type":"application/octet-stream"},
-      body:buf});
-    const txt=await r.text();
-    status.textContent=r.ok?"✓ "+txt:"✗ "+txt;
-    status.style.color=r.ok?"#22c55e":"#ef4444";
-    log((r.ok?"OTA OK: ":"OTA FAIL: ")+file.name, r.ok?"ok":"err");
-    loadFileList();
-  } catch(e){ status.textContent="Error: "+e; }
-}
- 
-async function loadFileList(){
-  try{
-    const r=await fetch("/api/files");
-    const files=await r.json();
-    const el=document.getElementById("fs-list");
-    el.innerHTML="<b>Filesystem:</b> "+files.map(f=>
-      `<span style="margin:0 8px">${f.name} <span style="color:#475569">(${f.size}b)</span></span>`
-    ).join("");
-  } catch(e){}
-}
- 
-// Auto-refresh every 10 seconds
-fetchData();
-loadFileList();
-setInterval(fetchData, 10000);
+
+  // ── load sensor data ─────────────────────────────────────
+  // بيطلب بيانات السنسورات من الـ ESP32 كل 10 ثواني
+  async function load(){
+    try{
+      // اطلب البيانات من /api/data
+      const res = await fetch('/api/data');
+      const d   = await res.json();
+
+      // الجهاز online → النقطة خضرا
+      document.getElementById('dot').style.background  = '#22c55e';
+      document.getElementById('stxt').textContent       = 'live';
+      document.getElementById('s-ip').textContent       = location.hostname;
+      document.getElementById('s-time').textContent     = new Date().toLocaleTimeString();
+
+      // Uptime
+      const up = Math.floor((Date.now()-boot)/1000);
+      document.getElementById('s-up').textContent =
+        up < 60 ? up+'s' : Math.floor(up/60)+'m '+(up%60)+'s';
+
+      // ── تحديث قيم الكروت ──
+      function sv(id, val, unit){
+        document.getElementById(id).innerHTML =
+          val !== null && val !== undefined
+            ? val + '<span class="card-unit">'+unit+'</span>'
+            : '--';
+      }
+      sv('vt', d.temperature, 'C');
+      sv('vh', d.humidity,    '%');
+      sv('vs', d.soil_pct,    '%');
+      sv('vk', d.tank_pct,    '%');
+
+      // ── تحديث البارات ──
+      function sb(id, val, max){
+        const el = document.getElementById(id);
+        if(el && val !== null) el.style.width = (val/max*100)+'%';
+      }
+      sb('bt', d.temperature, 50);
+      sb('bh', d.humidity,   100);
+      sb('bs', d.soil_pct,   100);
+      sb('bk', d.tank_pct,   100);
+
+      // لون بار التربة بيتغير حسب الرطوبة
+      const bs = document.getElementById('bs');
+      if(bs && d.soil_pct !== null){
+        bs.className = 'bar-fill ' +
+          (d.soil_pct < 30 ? 'c-red'    :   // جافة = أحمر
+           d.soil_pct > 70 ? 'c-blue'   :   // رطبة = أزرق
+                             'c-green');     // كويسة = أخضر
+      }
+
+      // ── تحديث أزرار الريلاي ──
+      [1,2,3,4].forEach(n => {
+        rs[n] = d['relay_'+n] || false;
+        updBtn(n);
+      });
+
+      lg(`T:${d.temperature}C  H:${d.humidity}%  Soil:${d.soil_pct}%  Tank:${d.tank_pct}%`);
+
+    } catch(e) {
+      // الجهاز offline → النقطة حمرا
+      document.getElementById('dot').style.background = '#ef4444';
+      document.getElementById('stxt').textContent     = 'offline';
+      lg('connection error: '+e, false);
+    }
+  }
+
+  // ── update relay button ──────────────────────────────────
+  // بيغير شكل الزرار حسب حالة الريلاي
+  function updBtn(n){
+    const b = document.getElementById('r'+n);
+    if(!b) return;
+    const on = rs[n];
+    b.className   = 'rbtn ' + (on ? 'ron' : 'roff');
+    b.textContent = rn[n] + ' — ' + (on ? 'ON' : 'OFF');
+  }
+
+  // ── toggle relay ─────────────────────────────────────────
+  // لما تضغط على زرار الريلاي
+  async function tog(n){
+    const newState = !rs[n];   // اعكس الحالة
+    try{
+      await fetch('/api/relay', {
+        method : 'POST',
+        headers: {'Content-Type':'application/json'},
+        body   : JSON.stringify({num:n, state:newState})
+      });
+      rs[n] = newState;
+      updBtn(n);
+      lg('Relay '+n+' → '+(newState?'ON':'OFF'));
+    } catch(e){ lg('relay error: '+e, false); }
+  }
+
+  // ── all off ──────────────────────────────────────────────
+  async function allOff(){
+    try{
+      await fetch('/api/relay', {
+        method : 'POST',
+        headers: {'Content-Type':'application/json'},
+        body   : JSON.stringify({num:0, state:false})
+      });
+      [1,2,3,4].forEach(n => { rs[n]=false; updBtn(n); });
+      lg('All relays OFF');
+    } catch(e){ lg('error: '+e, false); }
+  }
+
+  // ── deep sleep ───────────────────────────────────────────
+  async function goSleep(){
+    const s = parseInt(document.getElementById('ssec').value)||300;
+    if(!confirm('Sleep for '+s+' seconds?')) return;
+    try{
+      await fetch('/api/sleep', {
+        method : 'POST',
+        headers: {'Content-Type':'application/json'},
+        body   : JSON.stringify({seconds:s})
+      });
+      document.getElementById('dot').style.background  = '#f59e0b';
+      document.getElementById('stxt').textContent       = 'sleeping...';
+      lg('Sleeping '+s+'s — will wake automatically', false);
+    } catch(e){}
+  }
+
+  // ── OTA upload ───────────────────────────────────────────
+  // بيرفع ملف .py للـ ESP32 بدون سلك
+  async function doOTA(){
+    const pwd  = document.getElementById('opwd').value;
+    const file = document.getElementById('ofile').files[0];
+    const msg  = document.getElementById('ota-msg');
+
+    if(!file){ alert('Select a .py file first'); return; }
+
+    msg.textContent = 'Uploading '+file.name+'...';
+    msg.style.color = '#64748b';
+
+    try{
+      const buf = await file.arrayBuffer();   // اقرأ الملف كـ bytes
+      const r   = await fetch('/ota', {
+        method : 'POST',
+        headers: {
+          'X-OTA-Password' : pwd,
+          'X-OTA-Filename' : file.name,
+          'Content-Type'   : 'application/octet-stream'
+        },
+        body: buf
+      });
+      const txt = await r.text();
+      msg.textContent = (r.ok ? 'OK: ' : 'FAIL: ') + txt;
+      msg.style.color = r.ok ? '#22c55e' : '#ef4444';
+      lg('OTA '+(r.ok?'ok':'fail')+': '+file.name, r.ok);
+    } catch(e){
+      msg.textContent = 'Error: '+e;
+      msg.style.color = '#ef4444';
+    }
+  }
+
+  // ── auto refresh ─────────────────────────────────────────
+  // اقرأ البيانات فوراً
+  load();
+  // وكرر كل 10 ثواني
+  setInterval(load, 10000);
+
 </script>
 </body>
 </html>"""
- 
-# ── HTTP Server ───────────────────────────────────────────────
-def _parse_request(conn):
-    """Parse raw HTTP request → (method, path, headers, body)"""
+
+
+# ══════════════════════════════════════════════════════════════
+# Parse HTTP Request
+# بتحلل الـ raw bytes اللي جت من المتصفح
+# وبتطلع منها: method + path + headers + body
+# ══════════════════════════════════════════════════════════════
+def _parse(conn):
     raw = b""
     while True:
         chunk = conn.recv(1024)
+        if not chunk:
+            break
         raw += chunk
+        # لو الـ chunk أصغر من buffer = خلص الاستقبال
         if len(chunk) < 1024:
             break
- 
     try:
-        header_part, _, body = raw.partition(b"\r\n\r\n")
-        lines = header_part.decode("utf-8", "ignore").split("\r\n")
-        method, path, _ = lines[0].split(" ", 2)
+        # افصل الـ headers عن الـ body
+        head, _, body = raw.partition(b"\r\n\r\n")
+        lines  = head.decode("utf-8", "ignore").split("\r\n")
+
+        # السطر الأول: "GET / HTTP/1.1"
+        parts = lines[0].split(" ")
+        if len(parts) < 2:
+            return "GET", "/", {}, b""
+
+        method = parts[0]    # GET أو POST
+        path   = parts[1]    # / أو /api/data إلخ
+
+        # باقي السطور = headers
         headers = {}
         for line in lines[1:]:
             if ":" in line:
                 k, v = line.split(":", 1)
                 headers[k.strip().lower()] = v.strip()
+
         return method, path, headers, body
-    except:
+
+    except Exception as e:
+        print("[WEB] parse error:", e)
         return "GET", "/", {}, b""
- 
+
+
+# ══════════════════════════════════════════════════════════════
+# Send HTTP Response
+# بتبني الـ response وتبعتها للمتصفح
+# ══════════════════════════════════════════════════════════════
 def _send(conn, status, ctype, body):
     if isinstance(body, str):
         body = body.encode()
-    conn.sendall(
-        f"HTTP/1.1 {status}\r\n"
-        f"Content-Type: {ctype}\r\n"
-        f"Content-Length: {len(body)}\r\n"
-        f"Access-Control-Allow-Origin: *\r\n"
-        f"Connection: close\r\n\r\n".encode() + body
-    )
- 
-def run():
-    global _last_data, _auto_mode, _sleep_flag
- 
-    s = socket.socket()
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    s.bind(("0.0.0.0", WEB_PORT))
-    s.listen(3)
-    s.settimeout(1.0)
-    print(f"[WEB] Listening on :{WEB_PORT}")
- 
-    while not _sleep_flag:
-        try:
-            conn, addr = s.accept()
-        except OSError:
-            continue
- 
-        try:
-            method, path, headers, body = _parse_request(conn)
-            print(f"[WEB] {method} {path}")
- 
-            # ── GET / ────────────────────────────────────────
-            if path == "/" and method == "GET":
-                _send(conn, "200 OK", "text/html", DASHBOARD_HTML)
- 
-            # ── GET /api/data ─────────────────────────────────
-            elif path == "/api/data" and method == "GET":
-                data = read_all()
-                _last_data = data
-                data["relay_1"]   = relay_get(1)
-                data["relay_2"]   = relay_get(2)
-                data["relay_3"]   = relay_get(3)
-                data["relay_4"]   = relay_get(4)
-                data["auto_mode"] = _auto_mode
-                oled_show(data)
-                _send(conn, "200 OK", "application/json", json.dumps(data))
- 
-            # ── POST /api/relay ───────────────────────────────
-            elif path == "/api/relay" and method == "POST":
-                try:
-                    req = json.loads(body)
-                    num   = req.get("num", 0)
-                    state = req.get("state", False)
-                    if num == 0:
-                        all_relays_off()
-                    else:
-                        relay_set(num, state)
-                    _send(conn, "200 OK", "application/json", '{"ok":true}')
-                except Exception as e:
-                    _send(conn, "400 Bad Request", "text/plain", str(e))
- 
-            # ── POST /api/auto ────────────────────────────────
-            elif path == "/api/auto" and method == "POST":
-                try:
-                    req = json.loads(body)
-                    _auto_mode = bool(req.get("auto", True))
-                    _send(conn, "200 OK", "application/json", '{"ok":true}')
-                except:
-                    _send(conn, "400 Bad Request", "text/plain", "bad json")
- 
-            # ── POST /api/sleep ───────────────────────────────
-            elif path == "/api/sleep" and method == "POST":
-                try:
-                    req = json.loads(body)
-                    secs = int(req.get("seconds", SLEEP_SECONDS))
-                    _send(conn, "200 OK", "application/json",
-                          json.dumps({"ok": True, "sleep_seconds": secs}))
-                    conn.close()
-                    import machine
-                    all_relays_off()
-                    machine.deepsleep(secs * 1000)
-                except Exception as e:
-                    _send(conn, "500 Error", "text/plain", str(e))
- 
-            # ── POST /ota ─────────────────────────────────────
-            elif path == "/ota" and method == "POST":
-                code, msg = handle_ota_request(headers, body)
-                _send(conn, f"{code} {'OK' if code==200 else 'Error'}",
-                      "text/plain", msg)
- 
-            # ── GET /api/files ────────────────────────────────
-            elif path == "/api/files" and method == "GET":
-                files = list_files()
-                _send(conn, "200 OK", "application/json", json.dumps(files))
- 
-            # ── POST /api/delete ──────────────────────────────
-            elif path == "/api/delete" and method == "POST":
-                try:
-                    req = json.loads(body)
-                    ok, msg = delete_file(req.get("filename", ""))
-                    _send(conn, "200 OK", "application/json",
-                          json.dumps({"ok": ok, "msg": msg}))
-                except Exception as e:
-                    _send(conn, "400 Bad Request", "text/plain", str(e))
- 
-            # ── 404 ───────────────────────────────────────────
+
+    header = (
+        "HTTP/1.1 {}\r\n"
+        "Content-Type: {}\r\n"
+        "Content-Length: {}\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Connection: close\r\n\r\n"
+    ).format(status, ctype, len(body))
+
+    conn.sendall(header.encode() + body)
+
+# ══════════════════════════════════════════════════════════════
+# Handle — معالجة Request واحدة
+# بتنادى من run_loop في main.py لكل request
+# ══════════════════════════════════════════════════════════════
+def handle(conn):
+    try:
+        method, path, headers, body = _parse(conn)
+        print(f"[WEB] {method} {path}")
+
+        # ── GET / → ابعت الـ Dashboard ───────────────────────
+        if path == "/" and method == "GET":
+            _send(conn, "200 OK", "text/html", HTML)
+
+        # ── GET /api/data → ابعت بيانات السنسورات ─────────────
+        elif path == "/api/data" and method == "GET":
+            data = read_all()
+            data["relay_1"] = relay_get(1)
+            data["relay_2"] = relay_get(2)
+            data["relay_3"] = relay_get(3)
+            data["relay_4"] = relay_get(4)
+            oled_show(data)    # حدّث الشاشة كمان
+            _send(conn, "200 OK", "application/json", json.dumps(data))
+
+        # ── POST /api/relay → تحكم في الريلاي ─────────────────
+        elif path == "/api/relay" and method == "POST":
+            req   = json.loads(body.decode())
+            num   = req.get("num",   0)
+            state = req.get("state", False)
+            if num == 0:
+                all_relays_off()      # 0 = وقّف الكل
             else:
-                _send(conn, "404 Not Found", "text/plain", "Not found")
- 
-        except Exception as e:
-            print("[WEB] Handler error:", e)
-        finally:
+                relay_set(num, state)
+            _send(conn, "200 OK", "application/json", '{"ok":true}')
+
+        # ── POST /api/sleep → Deep Sleep ───────────────────────
+        elif path == "/api/sleep" and method == "POST":
+            req  = json.loads(body.decode())
+            secs = int(req.get("seconds", SLEEP_SECONDS))
+            # ابعت الـ response الأول
+            _send(conn, "200 OK", "application/json",
+                  json.dumps({"ok": True, "seconds": secs}))
             conn.close()
-            gc.collect()
- 
-    s.close()
-    print("[WEB] Server stopped (sleep flag set)")
+            # ثم نام
+            import machine
+            all_relays_off()
+            machine.deepsleep(secs * 1000)
+
+        # ── POST /ota → رفع ملف ────────────────────────────────
+        elif path == "/ota" and method == "POST":
+            code, msg = handle_ota_request(headers, body)
+            _send(conn,
+                  f"{code} {'OK' if code==200 else 'Error'}",
+                  "text/plain", msg)
+
+        # ── GET /api/files → قائمة الملفات ─────────────────────
+        elif path == "/api/files" and method == "GET":
+            _send(conn, "200 OK", "application/json",
+                  json.dumps(list_files()))
+
+        # ── 404 ────────────────────────────────────────────────
+        else:
+            _send(conn, "404 Not Found", "text/plain", "not found")
+
+    except Exception as e:
+        print("[WEB] handler error:", e)
+
+    finally:
+        conn.close()      # دايماً اقفل الـ connection
+        gc.collect()      # امسح الـ RAM

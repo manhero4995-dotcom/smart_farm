@@ -1,86 +1,73 @@
+# ============================================================
+# config.py — إعدادات المشروع
+# كل الأرقام والأسماء هنا بس
+# لو عايز تغير أي حاجة → غيّرها هنا بس مش في باقي الملفات
+# ============================================================
 
+# ── WiFi ──────────────────────────────────────────────────────
+# اسم وباسورد الـ WiFi بتاعك
+WIFI_SSID     = "WE_671AF0"
+WIFI_PASSWORD = "M27037096d@"
+HOSTNAME      = "smart_farm"     # اسم الجهاز على الشبكة
 
+# ── OTA ───────────────────────────────────────────────────────
+# باسورد رفع الملفات عبر الإنترنت
+OTA_PASSWORD  = "admin123"
 
+# ── Deep Sleep ────────────────────────────────────────────────
+# كام ثانية ينام الـ ESP32 بين كل قراءة وقراءة
+SLEEP_SECONDS      = 300    # 5 دقايق
+SOIL_DRY_THRESHOLD = 30     # لو التربة أقل من 30% → اسقي
+SOIL_WET_THRESHOLD = 70     # لو التربة أكتر من 70% → وقف
 
+# ── Sensor Pins ───────────────────────────────────────────────
+# أرقام الـ GPIO اللي وصّلت فيها كل سنسور
+PIN_DHT11         = 4       # سنسور الحرارة والرطوبة
+PIN_SOIL_AO       = 34      # سنسور رطوبة التربة (analog)
+PIN_ULTRASONIC_TR = 5       # الموجات فوق الصوتية — Trigger
+PIN_ULTRASONIC_EC = 18      # الموجات فوق الصوتية — Echo
 
-#  ------ WIFI ------
+# ── Output Pins ───────────────────────────────────────────────
+PIN_LED        = 2          # الـ LED الصغير على اللوحة
+PIN_RELAY_PUMP = 26         # الريلاي 1 — المضخة
+PIN_RELAY_2    = 27         # الريلاي 2 — فاضي
+PIN_RELAY_3    = 25         # الريلاي 3 — فاضي
+PIN_RELAY_4    = 33         # الريلاي 4 — فاضي
 
-WIFI_SSID          = "WE_671AF0"
-WIFI_PASSWORD      = "M27037096d@"
-HOSTNAME           = "smart_farm"
+# ── I2C / OLED ────────────────────────────────────────────────
+# الشاشة OLED بتتكلم مع الـ ESP32 عبر بروتوكول I2C
+# I2C بيحتاج سلكين بس: SDA (data) و SCL (clock)
+PIN_SDA     = 21
+PIN_SCL     = 22
+OLED_WIDTH  = 128
+OLED_HEIGHT = 64
+OLED_ADDR   = 0x3C    # عنوان الشاشة على الـ I2C bus
 
+# ── Relay Logic ───────────────────────────────────────────────
+# الريلاي بتاعك Active LOW
+# يعني: 0 = تشغيل ، 1 = إيقاف
+RELAY_ON  = 0
+RELAY_OFF = 1
 
-#  ------ OTA ------
+# ── Tank / Ultrasonic ─────────────────────────────────────────
+# السنسور بيقيس المسافة من فوق لسطح المية
+# لو المسافة صغيرة = الخزان مملان
+# لو المسافة كبيرة = الخزان فاضي
+TANK_MAX_CM   = 30.0   # أقصى مسافة = خزان فاضي
+TANK_EMPTY_CM = 5.0    # أقل مسافة  = خزان مملان
 
-OTA_PASSWORD       = "admin123"
+# ── MQTT ──────────────────────────────────────────────────────
+# MQTT = بروتوكول إرسال رسايل بين الأجهزة
+# الـ Broker = الوسيط اللي بيوزع الرسايل (على جهازك)
+MQTT_ENABLED     = True
+MQTT_BROKER      = "192.168.1.157"   # IP جهازك (اللي فيه mosquitto)
+MQTT_PORT        = 1883
+MQTT_USER        = "MOHA"
+MQTT_PASS        = "moha"
+MQTT_CLIENT      = "esp32-farm"      # اسم الـ ESP32 على الـ broker
+MQTT_PUB_SENSORS = "farm/sensors"   # ESP32 بيبعت البيانات هنا
+MQTT_PUB_STATUS  = "farm/status"    # ESP32 بيقول online/offline هنا
+MQTT_SUB_CMD     = "farm/cmd"       # ESP32 بيسمع الأوامر من هنا
 
-
-#  ------ Deep Sleep ------
-
-SLEEP_SECONDS      = 300
-
-SOIL_DRY_THRESHOLD = 30
-SOIL_DRY_THRESHOLD = 70
-
-
-#  ------ Sensor Pins ------
-
-PIN_DHT11          = 4
-PIN_SOIL_AO        = 34
-
-PIN_ULTRASONIC_TR  = 5
-PIN_ULTRASONIC_EC  = 14
-
-
-#  ------ Output Pins ------
-
-PIN_LED            = 2
-PIN_RELAY_PUMP     = 26
-PIN_RELAY_2        = 27
-PIN_RELAY_3        = 25
-PIN_RELAY_4        = 33
-
-
-#  ------ I2C / OLED ------
-
-PIN_SDA            = 21
-PIN_SCL            = 22
-
-#  Note when use another module big i use small dont work this pin  
-# ...revision the code of olde
-
-OLED_WIDTH         = 128
-OLED_HEIGHT        = 64
-OLED_ADDR          = 0x3C
-
-
-#  ------ Tank / Ultrasonic ------
-
-TANK_MAX_CM        = 30
-TANK_EMPTY_CM      = 5.0
-
-
-#  ------ Relay Logic ------
-
-RELAY_ON             = 0
-RELAY_OFF            = 1
-
-
-#  ------ MQTT ------
-
-#  Revision the ip and another
-
-MQTT_ENABLED      = False
-MQTT_BROKER       = "192.168.1.100"
-MQTT_PORT         = 1883
-MQTT_USER         = "MOHA"
-MQTT_PASS         = "moha"
-MQTT_TOPIC        = "farm/sensors"
-MQTT_CLIENT       = "farm/sensors"
-MQTT_PUB_STATUS   = "farm/status"
-MQTT_SUB_CMD      = "farm/cmd"
-
-
-#  ------ Web Dashboard ------
-
-WEB_PORT          = 80
+# ── Web Dashboard ─────────────────────────────────────────────
+WEB_PORT = 80    # رقم البورت — 80 يعني http عادي

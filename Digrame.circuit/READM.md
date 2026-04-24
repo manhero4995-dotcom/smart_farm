@@ -65,8 +65,8 @@ It monitors environmental conditions such as **soil moisture, temperature, humid
 ## 🖼️ Circuit Diagram
 > 📌 Add your image here
 
-![Circuit Diagram](Digrame.circuit/Pasted image.png)
-
+![Circuit Diagram](Pasted image.png)
+https://github.com/manhero4995-dotcom/smart_farm/blob/main/Digrame.circuit/Pasted%20image.png
 ---
 
 ## 💻 Technologies Used
@@ -76,17 +76,6 @@ It monitors environmental conditions such as **soil moisture, temperature, humid
 - 🗂️ GitHub  
 
 ---
-
-## 📂 Project Structure
-
-smart-farm/
-│── main.py
-│── config.py
-│── boot.py
-│── app
-│── lib
-│── Digrame.circuit
-│── README.md
 
 
 ---

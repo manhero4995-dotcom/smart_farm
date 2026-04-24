@@ -31,13 +31,19 @@ A comprehensive **IoT solution** for smart agriculture management. This project 
 │   └── 🆙 ota.py          # Over-The-Air update engine
 └── 📂 lib/               # External libraries (umqtt, ssd1306)
 
-📂 Full Setup & Workflow Guide
+```
+
+## 📂 Full Setup & Workflow Guide
 
 1️⃣ First: Clone the Repository 📥Download the project files to your local machine.
 
    OS               Command
-🐧 Linuxgit clone   git@github.com:manhero4995-dotcom/smart_farm.gitcd smart_farm
-🪟 Windowsgit clone https://github.com/manhero4995-dotcom/smart_farm.gitcd smart_farm
+   
+   ```text
+🐧  Linuxgit clone   git@github.com:manhero4995-dotcom/smart_farm.gitcd smart_farm
+🪟  Windowsgit clone https://github.com/manhero4995-dotcom/smart_farm.gitcd smart_farm
+
+  ```
 
 
 2️⃣ Second: Environment & Tools 🛠️
@@ -64,6 +70,9 @@ Use ampy to push the project structure. (Replace <PORT> with your specific port)
 
 Bash
 # Upload application folders
+
+```text
+
 ampy --port <PORT> put app
 ampy --port <PORT> put lib
 
@@ -71,6 +80,9 @@ ampy --port <PORT> put lib
 ampy --port <PORT> put main.py
 ampy --port <PORT> put boot.py
 ampy --port <PORT> put config.py
+
+```
+
 ⚙️ Step B: Project Operation Workflow
 Network: boot.py initializes and triggers wifi_manager.py to get the ESP32 online.
 
@@ -83,7 +95,11 @@ Remote: Data is published via umqtt for real-time tracking on your MQTT broker.
 📝 Saving Changes to GitHub
 To push this professional update to your repository, run:
 
+```text
+
 Bash
 git add README.md
 git commit -m "🚀 Finalize Professional README with full setup guide"
 git push origin main
+
+```

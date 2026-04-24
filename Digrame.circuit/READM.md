@@ -65,7 +65,7 @@ It monitors environmental conditions such as **soil moisture, temperature, humid
 ## 🖼️ Circuit Diagram
 > 📌 Add your image here
 
-![Circuit Diagram](YOUR_IMAGE_LINK_HERE)
+![Circuit Diagram](Digrame.circuit/Pasted image.png)
 
 ---
 

@@ -1,146 +1,137 @@
-# ============================================================
-# mqtt_client.py — إرسال واستقبال عبر MQTT
-#
-# MQTT = Message Queuing Telemetry Transport
-# بروتوكول خفيف جداً مصمم للـ IoT
-#
-# الفكرة:
-#   Publisher  → بيبعت رسالة على topic معين
-#   Subscriber → بيستنى رسايل على topic معين
-#   Broker     → الوسيط (mosquitto على جهازك)
-#
-# مشروعنا:
-#   ESP32 بيبعت  → farm/sensors (البيانات)
-#   ESP32 بيسمع  → farm/cmd     (الأوامر)
-# ============================================================
+
+
+# ============================
+# 📡 app/mqtt_client.py — MQTT with TLS , HiveMQ Cloud
+# ============================
 
 import json
 import time
 import sys
+import ssl
+
 sys.path.append('/lib')
 sys.path.append('/app')
+
 from umqtt.simple import MQTTClient
 from config import *
 
-# متغيرات عامة
-_client = None    # الـ connection object
-_cmd_cb = None    # الـ function اللي بتتنفذ لما ييجي أمر
-
+_client = None
+_cmd_cb = None
 
 def connect():
-    """
-    اتصل بالـ MQTT broker
-    بترجع True لو نجح
-    """
+
     global _client
 
     if not MQTT_ENABLED:
-        print("[MQTT] disabled in config")
+
+        print("📡 [MQTT] disabled")
         return False
 
     try:
+
+        ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ssl_ctx.verify_mode = ssl.CERT_NONE
         _client = MQTTClient(
-            client_id = MQTT_CLIENT,   # اسم الجهاز على الـ broker
-            server    = MQTT_BROKER,   # IP الـ broker
-            port      = MQTT_PORT,     # 1883 الافتراضي
+            client_id = MQTT_CLIENT,
+            server    = MQTT_BROKER,
+            port      = MQTT_PORT,
             user      = MQTT_USER,
             password  = MQTT_PASS,
-            keepalive = 60             # ابعت ping كل 60 ثانية
+            keepalive = 30,
+            ssl       = ssl_ctx,
         )
 
-        # Last Will = رسالة تتبعت تلقائياً لو الـ ESP32 انقطع فجأة
-        _client.set_last_will(MQTT_PUB_STATUS, b'offline', retain=True)
+        _client.set_last_will(
+            MQTT_PUB_STATUS, b'offline', retain=True
 
-        # سجّل الـ callback اللي بيتنفذ لما تيجي رسالة
+        )
+
         _client.set_callback(_on_message)
-
         _client.connect()
-
-        # اشترك في topic الأوامر
         _client.subscribe(MQTT_SUB_CMD)
-
-        # أعلن إنك online
         _client.publish(MQTT_PUB_STATUS, b'online', retain=True)
 
-        print(f"[MQTT] connected → {MQTT_BROKER}")
-        print(f"[MQTT] listening on → {MQTT_SUB_CMD}")
+        print(f"✅ [MQTT] connected → {MQTT_BROKER}")
         return True
 
     except Exception as e:
-        print("[MQTT] connect error:", e)
-        _client = None
-        return False
 
+        print(f"❌ [MQTT] error: {e}")
+
+        _client = None
+
+        return False
 
 def disconnect():
+
     global _client
+
     if _client:
+
         try:
-            _client.publish(MQTT_PUB_STATUS, b'offline', retain=True)
+
+            _client.publish(
+                MQTT_PUB_STATUS, b'offline', retain=True
+            )
             _client.disconnect()
+
         except:
             pass
-        _client = None
-        print("[MQTT] disconnected")
 
+        _client = None
+        print("📴 [MQTT] disconnected")
 
 def publish_sensors(data):
-    """
-    ابعت بيانات السنسورات كـ JSON
-    على topic: farm/sensors
-    """
+
     if not _client:
-        print("[MQTT] not connected")
-        return False
-    try:
-        data["ts"] = time.time()              # أضف timestamp
-        payload    = json.dumps(data).encode() # حوّل لـ bytes
-        _client.publish(MQTT_PUB_SENSORS, payload)
-        print(f"[MQTT] published {len(payload)}b → {MQTT_PUB_SENSORS}")
-        return True
-    except Exception as e:
-        print("[MQTT] publish error:", e)
         return False
 
+    try:
+
+        data["ts"] = time.time()
+        payload    = json.dumps(data).encode()
+        _client.publish(MQTT_PUB_SENSORS, payload)
+        print(f"📤 [MQTT] sent {len(payload)}b")
+
+        return True
+
+    except Exception as e:
+
+        print(f"❌ [MQTT] publish error: {e}")
+        return False
 
 def check_messages():
-    """
-    اتحقق من الرسايل الجديدة — Non-blocking
-    بتتنادى في الـ loop كل iteration
-    """
+
     if not _client:
         return
-    try:
-        _client.check_msg()    # لو في رسالة → بتنادي _on_message
-    except Exception as e:
-        print("[MQTT] check_msg error:", e)
 
+    try:
+        _client.check_msg()
+
+    except Exception as e:
+        print(f"⚠️  [MQTT] check error: {e}")
 
 def _on_message(topic, msg):
-    """
-    بتتنادى تلقائياً لما تيجي رسالة على farm/cmd
-    topic : اسم الـ topic
-    msg   : محتوى الرسالة (bytes)
-    """
-    try:
-        cmd = msg.decode().strip().lower()
-        print(f"[MQTT] command received: '{cmd}'")
-        if _cmd_cb:
-            _cmd_cb(cmd)    # نادي الـ handle_command في main.py
-    except Exception as e:
-        print("[MQTT] message error:", e)
 
+    try:
+
+        cmd = msg.decode().strip().lower()
+
+        print(f"📩 [MQTT] cmd: '{cmd}'")
+
+        if _cmd_cb:
+            _cmd_cb(cmd)
+
+    except Exception as e:
+
+        print(f"❌ [MQTT] msg error: {e}")
 
 def on_command(callback):
-    """
-    سجّل الـ function اللي بتتنفذ لما ييجي أمر
-    بتتنادى من main.py:
-        mqtt_client.on_command(handle_command)
-    """
+
     global _cmd_cb
+
     _cmd_cb = callback
 
-
 def is_connected():
-    return _client is not None
 
+    return _client is not None

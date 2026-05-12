@@ -1,235 +1,258 @@
-
 # ================
-# 🚀 main.py 
+# 🚀 main.py v3.3
 # ================
 
 import sys
-
 sys.path.append('/app')
 sys.path.append('/lib')
 
 import gc
 import machine
 import time
-import json
 import usocket as socket
 
-import wifi_manager
+from app import wifi_manager
 import mqtt_client
-import web_server 
-
+import web_server
 
 from sensors   import read_all
 from actuators import *
 from config    import *
 
 
+_sta_ip = None
+_ap_ip  = None
 
-# --------------- Command Handler ------------------
 
+# ======================
+# 📩 Command handler (MQTT)
+# ======================
 def handle_command(cmd):
-    
     print(f"📩 [CMD] {cmd}")
     oled_msg("CMD", cmd[:14], "")
 
-    if   cmd == "relay_1_on":    relay_set(1, True)
-    elif cmd == "relay_1_off":   relay_set(1, False)
-    elif cmd == "relay_2_on":    relay_set(2, True)
-    elif cmd == "relay_2_off":   relay_set(2, False)
-    elif cmd == "relay_3_on":    relay_set(3, True)
-    elif cmd == "relay_3_off":   relay_set(3, False)
-    elif cmd == "relay_4_on":    relay_set(4, True)
-    elif cmd == "relay_4_off":   relay_set(4, False)
-    elif cmd == "lamp_on":       relay_set(4, True)
-    elif cmd == "lamp_off":      relay_set(4, False)
-    elif cmd == "all_off":       all_relays_off()
-    elif cmd == "sleep_now":     go_sleep(SLEEP_SECONDS)
-    elif cmd == "reset":         machine.reset()
-    elif cmd.startswith("pump_"):
+    if   cmd == "relay_1_on":  relay_set(1, True)
+    elif cmd == "relay_1_off": relay_set(1, False)
+    elif cmd == "relay_2_on":  relay_set(2, True)
+    elif cmd == "relay_2_off": relay_set(2, False)
+    elif cmd == "relay_3_on":  relay_set(3, True)
+    elif cmd == "relay_3_off": relay_set(3, False)
+    elif cmd == "relay_4_on":  relay_set(4, True)
+    elif cmd == "relay_4_off": relay_set(4, False)
 
+    elif cmd == "lamp_on":     relay_set(4, True)
+    elif cmd == "lamp_off":    relay_set(4, False)
+
+    elif cmd == "all_off":     all_relays_off()
+    elif cmd == "reset":       machine.reset()
+
+    elif cmd == "sleep_now":   go_sleep(SLEEP_SECONDS)
+
+    elif cmd.startswith("sleep_"):
+        try:
+            go_sleep(max(10, min(int(cmd.split("_")[1]), 3600)))
+        except:
+            go_sleep(SLEEP_SECONDS)
+
+    elif cmd.startswith("pump_"):
         try:
             pump_timed(int(cmd.split("_")[1]))
-
         except:
             pass
 
 
-
-# --------------- Wake Reason ------------------
-
+# ======================
+# 🔍 Wake reason
+# ======================
 def wake_reason():
-
     cause = machine.wake_reason()
-
     return {
-
         machine.PIN_WAKE:   "PIN wake",
         machine.TIMER_WAKE: "Timer wake",
         machine.ULP_WAKE:   "ULP wake",
     }.get(cause, "Power-on / reset")
 
 
-
-# --------------- Auto Irrigation ------------------
-
+# ======================
+# 💧 Auto irrigation logic
+# ======================
 def auto_irrigate(data):
-
     soil = data.get("soil_pct")
     tank = data.get("tank_pct")
 
     if soil is None:
-
-        print("⚠️  [IRRIG] soil sensor error")
+        print("⚠️ [IRRIG] no soil data")
         return
 
     if tank is not None and tank < 10:
-
-        print(f"🚨 [IRRIG] tank low ({tank}%), skip")
         oled_msg("WARNING!", "Tank low!", f"{tank}%")
         time.sleep(2)
-
         return
 
     if soil < SOIL_DRY_THRESHOLD:
-
-        print(f"💧 [IRRIG] dry ({soil}%) → pump 10s")
-        oled_msg("IRRIGATING", f"Soil:{soil}%", "Pump 10s")
+        print(f"💧 [IRRIG] dry {soil}% → pump 10s")
+        oled_msg("IRRIGATING", f"Soil:{soil}%", "10s")
         pump_timed(10)
-
-    elif soil > SOIL_WET_THRESHOLD:
-
-        print(f"✅ [IRRIG] wet ({soil}%) → OK")
-
     else:
-
-        print(f"✅ [IRRIG] soil OK ({soil}%)")
-
+        print(f"✅ [IRRIG] OK {soil}%")
 
 
-# --------------- MQTT Connect ------------------
-
-def mqtt_connect_and_subscribe():
-
-    if not MQTT_ENABLED:
-
-        return None
+# ======================
+# 😴 Sleep mode
+# ======================
+def go_sleep(seconds=SLEEP_SECONDS):
+    print(f"😴 [SLEEP] {seconds}s")
+    oled_msg("Deep Sleep", f"{seconds}s", "zzz")
 
     try:
+        mqtt_client.disconnect()
+    except:
+        pass
 
-        mqtt_client.on_command(handle_command)
-
-        if mqtt_client.connect():
-            return True
-
-        return None
-
-    except Exception as e:
-
-        print(f"❌ [MQTT] failed: {e}")
-
-        return None
-
-
-
-# --------------- Deep Sleep ------------------
-
-def go_sleep(seconds=SLEEP_SECONDS):
-
-    print(f"😴 [SLEEP] {seconds}s")
-    oled_msg("Deep Sleep", f"{seconds}s", "zzzzz")
-
-    mqtt_client.disconnect()
     all_relays_off()
     tank_leds_off()
     led_off()
-    time.sleep(1)
 
+    try:
+        wifi_manager.stop_ap()
+    except:
+        pass
+
+    time.sleep(1)
     oled_clear()
     machine.deepsleep(seconds * 1000)
 
 
-# --------------- Web + MQTT Loop ------------------
-
+# ======================
+# 🔁 Main loop
+# ======================
 def run_loop():
-   
+    global _sta_ip, _ap_ip
+
     srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(("0.0.0.0", WEB_PORT))
-    srv.listen(3)
-    srv.settimeout(0.5)
+    srv.listen(5)
+    srv.settimeout(0.2)
 
-    last_pub  = time.time()
+    last_pub = time.time()
+    last_reconnect = time.time()
+
     PUB_EVERY = 30
+    RECONNECT_EVERY = 60
 
-    print("🔄 [LOOP] started — web + MQTT")
+    print("🔄 [LOOP] running — STA + AP")
 
     while True:
+        now = time.time()
 
-        # MQTT commands
-
+        # MQTT processing
         try:
             mqtt_client.check_messages()
+        except:
+            pass
 
-        except Exception as e:
-            print(f"⚠️  [MQTT] {e}")
+        # MQTT reconnect
+        if now - last_reconnect >= RECONNECT_EVERY:
+            try:
+                if not mqtt_client.is_connected():
+                    mqtt_client.reconnect_if_needed()
+            except:
+                pass
+            last_reconnect = now
 
-        # Periodic publish
-        if time.time() - last_pub >= PUB_EVERY:
+        # publish sensors
+        if now - last_pub >= PUB_EVERY:
             data = read_all()
+
             data["relay_1"]  = relay_get(1)
             data["relay_2"]  = relay_get(2)
             data["relay_3"]  = relay_get(3)
             data["relay_4"]  = relay_get(4)
             data["free_ram"] = gc.mem_free()
+            data["sta_ip"]   = _sta_ip
+            data["ap_ip"]    = _ap_ip
+
             oled_show(data)
             tank_leds_update(data.get("tank_pct"))
-            mqtt_client.publish_sensors(data)
+
+            try:
+                if mqtt_client.is_connected():
+                    mqtt_client.publish_sensors(data)
+            except:
+                pass
+
             last_pub = time.time()
             gc.collect()
 
-        # Web request
+        # Web server
         try:
-
-            conn, _ = srv.accept()
+            conn, addr = srv.accept()
             web_server.handle(conn)
-
         except OSError:
             pass
+        except Exception as e:
+            print(f"❌ [WEB] {e}")
 
 
-# --------------- Main ------------------
-
+# ======================
+# 🚀 Main entry
+# ======================
 def main():
-
+    global _sta_ip, _ap_ip
     gc.collect()
 
-    print("\n" + "=" * 40)
-    print("  🌿 Smart Farm IoT — MicroPython")
-    print("=" * 40)
-    print(f"  Wake  : {wake_reason()}")
-    print(f"  RAM   : {gc.mem_free()} bytes")
-    print("=" * 40 + "\n")
+    print("\n" + "="*40)
+    print("  🌿 Smart Farm v3.3")
+    print(f"  Wake: {wake_reason()}")
+    print(f"  RAM : {gc.mem_free()}b")
+    print("="*40 + "\n")
 
     led_blink(2)
-    oled_msg("Smart Farm", "Booting...", "v2.0")
+    oled_msg("Smart Farm", "Booting", "v3.3")
     time.sleep(1)
 
-    # ------------- Step 1: WiFi ----------------
+    # ======================
+    # 🌐 WiFi (STA + AP)
+    # ======================
+    oled_msg("WiFi", "STA + AP", "")
 
-    oled_msg("WiFi", "Connecting...", "")
-    ip = wifi_manager.connect()
-    if ip:
+    try:
+        result = wifi_manager.connect()
+
+        if isinstance(result, tuple) and len(result) == 2:
+            _sta_ip, _ap_ip = result
+        else:
+            _sta_ip = result
+            _ap_ip  = None
+
+    except Exception as e:
+        print(f"❌ WiFi error: {e}")
+        _sta_ip = None
+        _ap_ip  = None
+
+    web_server.set_ips(_sta_ip, _ap_ip)
+
+    if _sta_ip:
         led_blink(3, 0.1)
-        oled_msg("WiFi OK", ip, "")
+        oled_msg("WiFi OK", str(_sta_ip), f"AP:{_ap_ip}")
+        print(f"✅ STA:{_sta_ip}  AP:{_ap_ip}")
     else:
-        oled_msg("WiFi FAIL", "local only", "")
-    time.sleep(1)
+        oled_msg("AP only", str(_ap_ip or "none"), AP_SSID)
+        print(f"📡 AP only: {_ap_ip}")
 
+    time.sleep(2)
 
-    # ------------- Step 2: Sensors ----------------
+    # ======================
+    # 🌡 Sensor warmup
+    # ======================
+    oled_msg("Warming", "Sensors", "3s")
+    time.sleep(3)
 
-    oled_msg("Reading", "Sensors...", "")
-
+    # ======================
+    # 📊 First sensor read
+    # ======================
+    oled_msg("Reading", "Sensors", "")
     data = read_all()
 
     data["relay_1"]  = relay_get(1)
@@ -237,72 +260,62 @@ def main():
     data["relay_3"]  = relay_get(3)
     data["relay_4"]  = relay_get(4)
     data["free_ram"] = gc.mem_free()
-
-    print(f"📊 [MAIN] sensors: {data}")
+    data["sta_ip"]   = _sta_ip
+    data["ap_ip"]    = _ap_ip
 
     oled_show(data)
     tank_leds_update(data.get("tank_pct"))
 
-
-    # -------------Step 3: Auto Irrigation ----------------
-
     auto_irrigate(data)
 
+    # ======================
+    # ☁️ MQTT connect
+    # ======================
+    if _sta_ip and MQTT_ENABLED:
+        oled_msg("MQTT", "Connecting", "")
 
-    # ------------- Step 4: MQTT ----------------
-
-    if ip and MQTT_ENABLED:
-
-        oled_msg("MQTT", "Connecting...", "")
-        ok = mqtt_connect_and_subscribe()
+        mqtt_client.on_command(handle_command)
+        ok = mqtt_client.connect()
 
         if ok:
-
-            mqtt_client.publish_sensors(data)
-            oled_msg("MQTT OK", "HiveMQ", "Cloud")
-
+            try:
+                mqtt_client.publish_sensors(data)
+            except:
+                pass
+            oled_msg("MQTT OK", "Cloud", "")
         else:
+            oled_msg("MQTT FAIL", "local only", "")
 
-            oled_msg("MQTT FAIL", "", "")
         time.sleep(1)
 
+    # ======================
+    # 🌐 Dashboard start
+    # ======================
+    active = _sta_ip or _ap_ip or "no-ip"
+    oled_msg("Dashboard", str(active), f"AP:{_ap_ip}")
 
-    # ------------- Step 5: Web Dashboard + Loop ----------------
+    led_on()
 
-    if ip:
+    print(f"🌐 STA: http://{_sta_ip}  AP: http://{_ap_ip}")
 
-        oled_msg("Dashboard", ip, ":80")
-        led_on()
+    try:
+        run_loop()
+    except Exception as e:
+        print(f"❌ loop error: {e}")
+        sys.print_exception(e)
 
-        print(f"🌐 [MAIN] dashboard at http://{ip}")
-
-        try:
-
-            run_loop()
-
-        except Exception as e:
-
-            print(f"❌ [MAIN] loop error: {e}")
-
-            sys.print_exception(e)
-        led_off()
-
-
-    # ------------- Step 6: Sleep ----------------
-
+    led_off()
     go_sleep(SLEEP_SECONDS)
 
 
+# ======================
+# 🔥 Boot
+# ======================
 if __name__ == "__main__":
-
     try:
-
         main()
-
     except Exception as e:
-
-        print(f"💥 [MAIN] FATAL: {e}")
-
+        print(f"💥 FATAL: {e}")
         sys.print_exception(e)
         led_blink(10, 0.1)
         time.sleep(3)

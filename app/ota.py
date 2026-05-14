@@ -1,12 +1,9 @@
-
-
 # ==================
-# 📦 ota.py (MICROPYTHON SAFE VERSION)
+# 📦 ota.py (MULTI FILE SAFE VERSION)
 # ==================
 
 import os
 import sys
-import machine
 
 sys.path.append('/app')
 
@@ -35,92 +32,140 @@ APP_FILES = (
 
 
 # ======================
-# 🔐 OTA Handler
+# 🔐 OTA HANDLER
 # ======================
+
 def handle_ota_request(headers, body):
 
-    # ─── password check ───
+    # ─────────────────────────
+    # 🔐 Password check
+    # ─────────────────────────
+
     pwd = headers.get("x-ota-password", "")
+
     if pwd != OTA_PASSWORD:
         print("❌ [OTA] wrong password")
         return 401, "Unauthorized", False
 
-    # ─── filename ───
+
+    # ─────────────────────────
+    # 📄 Filename
+    # ─────────────────────────
+
     filename = headers.get("x-ota-filename", "").strip()
+
     if not filename:
         return 400, "Missing filename", False
 
-    # ─── SAFE filename (NO os.path in MicroPython) ───
+    # clean filename
     filename = filename.split('/')[-1]
     filename = filename.split('\\')[-1]
 
-    # ─── validate extension ───
+
+    # ─────────────────────────
+    # 📌 Validate file type
+    # ─────────────────────────
+
     if not (filename.endswith(".py") or filename.endswith(".html")):
         return 400, "Only .py and .html allowed", False
 
-    # ─── choose storage location ───
+
+    # ─────────────────────────
+    # 📁 Select path
+    # ─────────────────────────
+
     if filename in ROOT_FILES:
         path = "/" + filename
     else:
         path = "/app/" + filename
 
-    try:
-        print(f"📦 [OTA] writing -> {path}")
-        print(f"📦 [OTA] size -> {len(body)} bytes")
 
-        # write file
+    try:
+
+        print("================================")
+        print(f"📦 OTA FILE: {filename}")
+        print(f"📂 PATH: {path}")
+        print(f"📏 SIZE: {len(body)} bytes")
+        print("================================")
+
+        # ─────────────────────────
+        # 💾 WRITE FILE
+        # ─────────────────────────
+
         with open(path, "wb") as f:
             f.write(body)
 
-        print(f"✅ [OTA] saved: {path}")
+        print(f"✅ Saved: {path}")
 
-        needs_reset = True
-        msg = f"OK: {filename} updated -> {path}"
+        return 200, f"OK: {filename} updated", True
 
-        return 200, msg, needs_reset
 
     except Exception as e:
-        print(f"❌ [OTA] error: {e}")
+
+        print(f"❌ [OTA ERROR]: {e}")
+
         return 500, str(e), False
 
 
 # ==================
-# 📂 list files (debug)
+# 📂 LIST FILES
 # ==================
+
 def list_files():
+
     files = []
 
     def scan(folder):
+
         try:
+
             for name in os.listdir(folder):
+
                 full = folder.rstrip('/') + '/' + name
+
                 try:
+
                     stat = os.stat(full)
+
+                    # directory
                     if stat[0] & 0x4000:
                         scan(full)
+
                     else:
                         files.append({
                             "name": full,
                             "size": stat[6]
                         })
+
                 except:
                     pass
+
         except:
             pass
+
 
     scan("/")
     return files
 
 
 # ==================
-# 💾 free space
+# 💾 FREE SPACE
 # ==================
+
 def free_space():
+
     try:
+
         s = os.statvfs("/")
+
         block = s[0]
         total = s[2] * block
-        free = s[3] * block
-        return (total - free) // 1024, total // 1024
+        free  = s[3] * block
+
+        used = total - free
+
+        return used // 1024, total // 1024
+
     except:
+
         return 0, 0

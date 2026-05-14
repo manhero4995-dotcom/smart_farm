@@ -1,5 +1,5 @@
 # =========================
-# ⚡ Smart Farm — ACTUATORS FINAL CLEAN
+# ⚡ Smart Farm — ACTUATORS FINAL CLEAN + PUMP TIMER
 # =========================
 
 from machine import Pin, I2C
@@ -28,8 +28,12 @@ for r in _relays.values():
 
 
 def relay_set(num, state):
+
     if num in _relays:
-        _relays[num].value(RELAY_ON if state else RELAY_OFF)
+
+        _relays[num].value(
+            RELAY_ON if state else RELAY_OFF
+        )
 
         oled_relay_animation(num, state)
 
@@ -37,11 +41,47 @@ def relay_set(num, state):
 
 
 def relay_get(num):
+
     return _relays[num].value() == RELAY_ON
 
 
-def pump_on(): relay_set(1, True)
-def pump_off(): relay_set(1, False)
+# =========================================================
+# 💧 PUMP
+# =========================================================
+
+def pump_on():
+    relay_set(1, True)
+
+
+def pump_off():
+    relay_set(1, False)
+
+
+def pump_timed(seconds=10):
+
+    print(f"💧 Pump ON for {seconds}s")
+
+    pump_on()
+
+    for i in range(seconds, 0, -1):
+
+        if OLED_OK:
+
+            _oled.fill(0)
+
+            _oled.text("IRRIGATION", 18, 10)
+            _oled.hline(0, 22, 128, 1)
+
+            _oled.text("PUMP ON", 28, 34)
+            _oled.text(str(i) + " sec", 36, 50)
+
+            _oled.show()
+
+        time.sleep(1)
+
+    pump_off()
+
+    print("✅ Pump OFF")
 
 
 # =========================================================
@@ -60,9 +100,12 @@ def led_off():
 
 
 def led_blink(times=3, delay=0.2):
+
     for _ in range(times):
+
         _led.value(1)
         time.sleep(delay)
+
         _led.value(0)
         time.sleep(delay)
 
@@ -85,20 +128,28 @@ for l in _tank_leds:
 def tank_leds_update(pct):
 
     if pct is None:
+
         for l in _tank_leds:
             l.value(1)
+
         time.sleep(0.1)
+
         for l in _tank_leds:
             l.value(0)
+
         return
 
     levels = [25, 50, 75, 100]
 
     for i, t in enumerate(levels):
-        _tank_leds[i].value(1 if pct >= t else 0)
+
+        _tank_leds[i].value(
+            1 if pct >= t else 0
+        )
 
 
 def tank_leds_off():
+
     for l in _tank_leds:
         l.value(0)
 
@@ -108,7 +159,13 @@ def tank_leds_off():
 # =========================================================
 
 try:
-    _i2c = I2C(0, scl=Pin(PIN_SCL), sda=Pin(PIN_SDA), freq=400000)
+
+    _i2c = I2C(
+        0,
+        scl=Pin(PIN_SCL),
+        sda=Pin(PIN_SDA),
+        freq=400000
+    )
 
     _oled = ssd1306.SSD1306_I2C(
         OLED_WIDTH,
@@ -118,30 +175,36 @@ try:
     )
 
     OLED_OK = True
+
     print("✅ OLED READY")
 
 except Exception as e:
+
     OLED_OK = False
+
     print("❌ OLED FAIL:", e)
 
 
 # =========================================================
-# ⚡ SIMPLE ANIMATION (FAST FLASH)
+# ⚡ SIMPLE ANIMATION
 # =========================================================
 
 def oled_simple_anim():
+
     if not OLED_OK:
         return
 
     _oled.invert(1)
     _oled.show()
+
     time.sleep(0.03)
+
     _oled.invert(0)
     _oled.show()
 
 
 # =========================================================
-# ⚡ RELAY ANIMATION (LIGHT)
+# ⚡ RELAY ANIMATION
 # =========================================================
 
 def oled_relay_animation(num, state):
@@ -150,22 +213,24 @@ def oled_relay_animation(num, state):
         return
 
     _oled.fill(0)
+
     _oled.text("SMART FARM", 20, 0)
     _oled.hline(0, 10, 128, 1)
 
     _oled.text("RELAY", 45, 25)
 
     if state:
-        _oled.text(f"R{num} ON", 40, 40)
+        _oled.text(f"R{num} ON", 40, 42)
     else:
-        _oled.text(f"R{num} OFF", 40, 40)
+        _oled.text(f"R{num} OFF", 36, 42)
 
     _oled.show()
+
     time.sleep(0.2)
 
 
 # =========================================================
-# 📊 OLED DASHBOARD (WITH UNITS + SIMPLE ANIM)
+# 📊 OLED DASHBOARD
 # =========================================================
 
 def oled_show(data):
@@ -173,21 +238,16 @@ def oled_show(data):
     if not OLED_OK:
         return
 
-    # simple animation عند التحديث
     oled_simple_anim()
 
     _oled.fill(0)
 
-    _oled.text("SMART FARM", 20, 0)
+    _oled.text("SMART FARM", 18, 0)
     _oled.hline(0, 10, 128, 1)
 
-    # ======================
-    # 📊 DATA
-    # ======================
-
-    t = data.get("temperature", "--")
-    h = data.get("humidity", "--")
-    s = data.get("soil_pct", "--")
+    t  = data.get("temperature", "--")
+    h  = data.get("humidity", "--")
+    s  = data.get("soil_pct", "--")
     tk = data.get("tank_pct", "--")
 
     pump = "ON" if relay_get(1) else "OFF"
@@ -208,7 +268,7 @@ def oled_show(data):
     _oled.text("TANK:", 0, 44)
     _oled.text(str(tk) + "%", 60, 44)
 
-    # ⚡ PUMP STATUS
+    # ⚡ PUMP
     _oled.hline(0, 54, 128, 1)
     _oled.text("PUMP:" + pump, 0, 56)
 
@@ -216,7 +276,7 @@ def oled_show(data):
 
 
 # =========================================================
-# 🧾 MESSAGE SCREEN
+# 🧾 OLED MESSAGE
 # =========================================================
 
 def oled_msg(l1, l2="", l3=""):
@@ -225,9 +285,11 @@ def oled_msg(l1, l2="", l3=""):
         return
 
     _oled.fill(0)
+
     _oled.text(str(l1), 0, 10)
     _oled.text(str(l2), 0, 28)
     _oled.text(str(l3), 0, 46)
+
     _oled.show()
 
 
@@ -241,23 +303,29 @@ def oled_boot():
         return
 
     _oled.fill(0)
-    _oled.text("SMART FARM", 20, 10)
-    _oled.text("STARTING...", 25, 30)
 
-    _oled.rect(10, 50, 108, 8, 1)
+    _oled.text("SMART FARM", 18, 12)
+    _oled.text("STARTING...", 20, 32)
+
+    _oled.rect(10, 52, 108, 8, 1)
 
     for i in range(0, 100, 5):
-        _oled.fill_rect(12, 52, i, 4, 1)
+
+        _oled.fill_rect(12, 54, i, 4, 1)
+
         _oled.show()
+
         time.sleep_ms(40)
 
 
 # =========================================================
-# 🧹 CLEAR
+# 🧹 OLED CLEAR
 # =========================================================
 
 def oled_clear():
 
     if OLED_OK:
+
         _oled.fill(0)
+
         _oled.show()

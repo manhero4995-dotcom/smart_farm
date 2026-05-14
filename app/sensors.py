@@ -28,7 +28,7 @@ def read_dht():
 
 
 # =========================================
-# 🌱 Soil Moisture
+# 🌱 Soil Moisture (FIXED + SMOOTH)
 # =========================================
 _adc = ADC(Pin(PIN_SOIL_AO))
 _adc.atten(ADC.ATTN_11DB)
@@ -37,25 +37,30 @@ _adc.width(ADC.WIDTH_12BIT)
 
 def read_soil():
 
-    # dry soil value
-    DRY_VAL = 3300
-
-    # wet soil value
-    WET_VAL = 1000
+    # 🔥 Calibration values (عدّلها حسب حساسك)
+    DRY_VAL = 3800   # air / dry soil
+    WET_VAL = 1200   # water / very wet soil
 
     samples = []
 
-    for _ in range(5):
+    # 📊 smoothing (تنعيم القراءة)
+    for _ in range(10):
         samples.append(_adc.read())
         time.sleep_ms(10)
 
-    raw = sum(samples) // len(samples)
+    raw = sum(samples) / len(samples)
 
-    pct = (DRY_VAL - raw) / (DRY_VAL - WET_VAL) * 100
+    # 🚨 avoid division error
+    if DRY_VAL == WET_VAL:
+        return 0, int(raw)
 
+    # 🌱 percentage conversion
+    pct = (DRY_VAL - raw) * 100 / (DRY_VAL - WET_VAL)
+
+    # 📌 clamp 0 → 100
     pct = max(0, min(100, pct))
 
-    return round(pct, 1), raw
+    return round(pct, 1), int(raw)
 
 
 # =========================================
@@ -69,38 +74,31 @@ trig.value(0)
 
 def read_ultrasonic(timeout_us=30000):
 
-    # clean trigger
     trig.value(0)
     time.sleep_us(5)
 
-    # send pulse
     trig.value(1)
     time.sleep_us(10)
     trig.value(0)
 
-    # wait echo HIGH
     start_wait = time.ticks_us()
 
     while echo.value() == 0:
-
         if time.ticks_diff(time.ticks_us(), start_wait) > timeout_us:
-            print("❌ [ULTRASONIC] timeout waiting HIGH")
+            print("❌ [ULTRASONIC] timeout HIGH")
             return None
 
     pulse_start = time.ticks_us()
 
-    # wait echo LOW
     while echo.value() == 1:
-
         if time.ticks_diff(time.ticks_us(), pulse_start) > timeout_us:
-            print("❌ [ULTRASONIC] timeout waiting LOW")
+            print("❌ [ULTRASONIC] timeout LOW")
             return None
 
     pulse_end = time.ticks_us()
 
     duration = time.ticks_diff(pulse_end, pulse_start)
 
-    # convert to cm
     distance_cm = duration / 58.0
 
     return round(distance_cm, 1)
@@ -116,17 +114,12 @@ def water_level_pct():
     if dist is None:
         return None, None
 
-    # show raw value
     print(f"📏 [ULTRASONIC] RAW = {dist} cm")
 
-    # limits
     dist = max(TANK_FULL_CM, min(dist, TANK_EMPTY_CM))
 
-    # percentage calculation
     pct = (
-        1 -
-        (dist - TANK_FULL_CM) /
-        (TANK_EMPTY_CM - TANK_FULL_CM)
+        1 - (dist - TANK_FULL_CM) / (TANK_EMPTY_CM - TANK_FULL_CM)
     ) * 100
 
     pct = round(max(0, min(100, pct)), 1)
@@ -150,14 +143,11 @@ def read_all():
     return {
 
         "temperature": temp,
-
         "humidity": hum,
 
         "soil_pct": soil_pct,
-
         "soil_raw": soil_raw,
 
         "tank_dist": dist_cm,
-
         "tank_pct": tank_pct,
     }

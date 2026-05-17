@@ -5,8 +5,8 @@
 # =========================================
 # 📶 WiFi
 # =========================================
-WIFI_SSID     = "WE_671AF0"
-WIFI_PASSWORD = "M27037096d@"
+WIFI_SSID     = "Moha"
+WIFI_PASSWORD = "00001112"
 HOSTNAME      = "smart_farm"
 
 
